@@ -1,51 +1,185 @@
+diff --git a/target/linux/bcm27xx/base-files/etc/init.d/bluetooth-hci b/target/linux/bcm27xx/base-files/etc/init.d/bluetooth-hci
+new file mode 100755
+index 0000000000..fe6ec02c60
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/init.d/bluetooth-hci
+@@ -0,0 +1,22 @@
++#!/bin/sh /etc/rc.common
++
++START=95
++STOP=10
++
++USE_PROCD=1
++
++start_service() {
++    modprobe btbcm
++    modprobe hci_uart
++    sleep 2
++
++    procd_open_instance
++    procd_set_param command /usr/bin/btattach -B /dev/ttyAMA1 -S 3000000 -P bcm
++    procd_set_param respawn
++    procd_set_param stdout 1
++    procd_set_param stderr 1
++    procd_close_instance
++
++    sleep 3
++    hciconfig hci0 up
++}
+diff --git a/target/linux/bcm27xx/base-files/etc/init.d/fim b/target/linux/bcm27xx/base-files/etc/init.d/fim
+new file mode 100755
+index 0000000000..b519b57caa
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/init.d/fim
+@@ -0,0 +1,16 @@
++#!/bin/sh /etc/rc.common
++
++START=99
++STOP=10
++
++USE_PROCD=1
++
++start_service() {
++    procd_open_instance
++    procd_set_param command /usr/bin/python3 /opt/fim/manager.py
++    procd_set_param respawn
++    procd_set_param stdout 1
++    procd_set_param stderr 1
++    procd_set_param term_timeout 5
++    procd_close_instance
++}
+diff --git a/target/linux/bcm27xx/base-files/etc/rc.d/S95bluetooth-hci b/target/linux/bcm27xx/base-files/etc/rc.d/S95bluetooth-hci
+new file mode 120000
+index 0000000000..96994d8e4a
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/rc.d/S95bluetooth-hci
+@@ -0,0 +1 @@
++./etc/init.d/bluetooth-hci
+\ No newline at end of file
+diff --git a/target/linux/bcm27xx/base-files/etc/rc.d/S99fim b/target/linux/bcm27xx/base-files/etc/rc.d/S99fim
+new file mode 120000
+index 0000000000..51ce00f278
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/rc.d/S99fim
+@@ -0,0 +1 @@
++./etc/init.d/fim
+\ No newline at end of file
 diff --git a/target/linux/bcm27xx/base-files/etc/rc.local b/target/linux/bcm27xx/base-files/etc/rc.local
-index 4bcc226940..8eea22b5dc 100755
---- a/target/linux/bcm27xx/base-files/etc/rc.local
+new file mode 100755
+index 0000000000..8eea22b5dc
+--- /dev/null
 +++ b/target/linux/bcm27xx/base-files/etc/rc.local
-@@ -1,10 +1,3 @@
- echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
- 
--modprobe btbcm
--modprobe hci_uart
--sleep 2
--btattach -B /dev/ttyAMA1 -S 3000000 -P bcm
--sleep 3
--hciconfig hci0 up
--
- exit 0
-diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/01-setup-expand b/target/linux/bcm27xx/base-files/etc/uci-defaults/01-setup-expand
-deleted file mode 100755
-index a29934be92..0000000000
---- a/target/linux/bcm27xx/base-files/etc/uci-defaults/01-setup-expand
-+++ /dev/null
-@@ -1,7 +0,0 @@
--#/bin/sh
--chmod +x /etc/resize-fs.sh
--
--. /etc/resize-fs.sh
--sh /etc/uci-defaults/70-rootpt-resize
--
--exit 0
+@@ -0,0 +1,3 @@
++echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
++
++exit 0
+diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/70-rootpt-resize b/target/linux/bcm27xx/base-files/etc/uci-defaults/70-rootpt-resize
+new file mode 100755
+index 0000000000..552c16ed67
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/uci-defaults/70-rootpt-resize
+@@ -0,0 +1,22 @@
++if [ ! -e /etc/rootpt-resize ] \
++&& type parted > /dev/null \
++&& lock -n /var/lock/root-resize
++then
++ROOT_BLK="$(readlink -f /sys/dev/block/"$(awk -e \
++'$9=="/dev/root"{print $3}' /proc/self/mountinfo)")"
++ROOT_DISK="/dev/$(basename "${ROOT_BLK%/*}")"
++ROOT_PART="${ROOT_BLK##*[^0-9]}"
++parted -f -s "${ROOT_DISK}" \
++resizepart "${ROOT_PART}" 100%
++mount_root done
++touch /etc/rootpt-resize
++
++if [ -e /boot/cmdline.txt ]
++then 
++NEW_UUID=`blkid ${ROOT_DISK}p${ROOT_PART} | sed -n 's/.*PARTUUID="\([^"]*\)".*/\1/p'`
++sed -i "s/PARTUUID=[^ ]*/PARTUUID=${NEW_UUID}/" /boot/cmdline.txt
++fi
++
++reboot
++fi
++exit 1
+diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/80-rootfs-resize b/target/linux/bcm27xx/base-files/etc/uci-defaults/80-rootfs-resize
+new file mode 100755
+index 0000000000..27be6f69a3
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/uci-defaults/80-rootfs-resize
+@@ -0,0 +1,22 @@
++if [ ! -e /etc/rootfs-resize ] \
++&& [ -e /etc/rootpt-resize ] \
++&& type losetup > /dev/null \
++&& type resize2fs > /dev/null \
++&& lock -n /var/lock/root-resize
++then
++ROOT_BLK="$(readlink -f /sys/dev/block/"$(awk -e \
++'$9=="/dev/root"{print $3}' /proc/self/mountinfo)")"
++ROOT_DEV="/dev/${ROOT_BLK##*/}"
++LOOP_DEV="$(awk -e '$5=="/overlay"{print $9}' \
++/proc/self/mountinfo)"
++if [ -z "${LOOP_DEV}" ]
++then
++LOOP_DEV="$(losetup -f)"
++losetup "${LOOP_DEV}" "${ROOT_DEV}"
++fi
++resize2fs -f "${LOOP_DEV}"
++mount_root done
++touch /etc/rootfs-resize
++reboot
++fi
++exit 1
 diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default b/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
-index 1350dc6c74..abc121c78f 100755
---- a/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
+new file mode 100755
+index 0000000000..abc121c78f
+--- /dev/null
 +++ b/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
-@@ -19,6 +19,11 @@ uci set firewall.@rule[-1].src='wan'
- uci set firewall.@rule[-1].name='Allow-SSH-WAN'
- uci set firewall.@rule[-1].dest_port='22'
- uci set firewall.@rule[-1].target='ACCEPT'
+@@ -0,0 +1,87 @@
++# /etc/config/dhcp
++uci del dhcp.lan.ra_slaac
++uci set dhcp.lan.ra_preference='medium'
++
++# /etc/config/firewall
++uci add firewall forwarding # =cfg0fad58
++uci set firewall.@forwarding[-1].src='docker'
++uci set firewall.@forwarding[-1].dest='wan'
++uci add firewall redirect # =cfg103837
++uci set firewall.@redirect[-1].dest='lan'
++uci set firewall.@redirect[-1].target='DNAT'
++uci set firewall.@redirect[-1].name='web'
++uci set firewall.@redirect[-1].src='wan'
++uci set firewall.@redirect[-1].src_dport='80'
++uci set firewall.@redirect[-1].dest_ip='192.168.3.1'
++uci set firewall.@redirect[-1].dest_port='80'
++uci add firewall rule # =cfg1192bd
++uci set firewall.@rule[-1].src='wan'
++uci set firewall.@rule[-1].name='Allow-SSH-WAN'
++uci set firewall.@rule[-1].dest_port='22'
++uci set firewall.@rule[-1].target='ACCEPT'
 +uci del firewall.cfg03dc81.network
 +uci add_list firewall.cfg03dc81.network='wan'
 +uci add_list firewall.cfg03dc81.network='wan6'
 +uci add_list firewall.cfg03dc81.network='wwan'
 +
- 
- # /etc/config/network
- uci add network device # =cfg070f15
-@@ -38,7 +43,33 @@ uci set network.wan.peerdns='0'
- uci add_list network.wan.dns='1.1.1.1'
- uci set network.wan.multipath='off'
- 
++
++# /etc/config/network
++uci add network device # =cfg070f15
++uci set network.@device[-1].type='bridge'
++uci set network.@device[-1].name='bridge-lan'
++uci set network.@device[-1].bridge_empty='1'
++uci del network.cfg030f15
++uci set network.globals.packet_steering='1'
++uci set network.lan.device='bridge-lan'
++uci del network.lan.ipaddr
++uci add_list network.lan.ipaddr='192.168.3.1/24'
++uci set network.lan.multipath='off'
++uci set network.wan=interface
++uci set network.wan.proto='dhcp'
++uci set network.wan.device='eth0'
++uci set network.wan.peerdns='0'
++uci add_list network.wan.dns='1.1.1.1'
++uci set network.wan.multipath='off'
++
 +uci set network.wwan=interface
 +uci set network.wwan.proto='none'
 +uci set network.wwan.proto='dhcp'
@@ -60,7 +194,7 @@ index 1350dc6c74..abc121c78f 100755
 +    sleep 1
 +done
 +
- # /etc/config/wireless
++# /etc/config/wireless
 +uci set wireless.radio0.htmode='HT20'
 +uci set wireless.radio0.band='2g'
 +uci set wireless.radio0.channel='auto'
@@ -73,23 +207,347 @@ index 1350dc6c74..abc121c78f 100755
 +uci set wireless.radio0.disabled='0'
 +uci set wireless.default_radio0.disabled='0'
 +
- uci set wireless.radio1.htmode='HT20'
- uci set wireless.radio1.band='2g'
- uci set wireless.radio1.channel='auto'
-@@ -46,12 +77,11 @@ uci set wireless.radio1.cell_density='0'
- uci set wireless.default_radio1.ssid='FKM-Comp'
- uci set wireless.default_radio1.encryption='psk2'
- uci set wireless.default_radio1.key='Competition'
--
--# docker setup
--uci set dockerd.firewall.extra_iptables_args='--match conntrack ! --ctstate RELATED,ESTABLISHED'
--uci commit dockerd
++uci set wireless.radio1.htmode='HT20'
++uci set wireless.radio1.band='2g'
++uci set wireless.radio1.channel='auto'
++uci set wireless.radio1.cell_density='0'
++uci set wireless.default_radio1.ssid='FKM-Comp'
++uci set wireless.default_radio1.encryption='psk2'
++uci set wireless.default_radio1.key='Competition'
 +uci set wireless.radio1.disabled='0'
 +uci set wireless.default_radio1.disabled='0'
- 
- uci commit
--wifi reload
++
++uci commit
 +wifi up radio0
 +wifi up radio1
++
++exit 0
+diff --git a/target/linux/bcm27xx/base-files/opt/fim b/target/linux/bcm27xx/base-files/opt/fim
+new file mode 160000
+index 0000000000..dab9c92b1c
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/opt/fim
+@@ -0,0 +1 @@
++Subproject commit dab9c92b1cf87ce0c3104a7217ed27b056b1437b
+diff --git a/target/linux/bcm27xx/config-6.12 b/target/linux/bcm27xx/config-6.12
+index 157d532cae..3006ae4b7f 100644
+--- a/target/linux/bcm27xx/config-6.12
++++ b/target/linux/bcm27xx/config-6.12
+@@ -1,59 +1,225 @@
+-# CONFIG_BACKLIGHT_RPI is not set
+-# CONFIG_BCM2712_MIP is not set
+-# CONFIG_COMMON_CLK_RP1 is not set
+-# CONFIG_COMMON_CLK_RP1_SDIO is not set
+-# CONFIG_COMMON_CLK_RP1_SDIO  is not set
+-# CONFIG_DRM_PANEL_ILITEK_ILI9805 is not set
+-# CONFIG_DRM_PANEL_ILITEK_ILI9806E is not set
+-# CONFIG_DRM_PANEL_ILITEK_ILI9806E_SPI is not set
+-# CONFIG_DRM_PANEL_ILITEK_ILI9882T is not set
+-# CONFIG_DRM_PANEL_TPO_Y17P is not set
+-# CONFIG_DRM_PANEL_WAVESHARE_TOUCHSCREEN is not set
+-# CONFIG_DRM_PANEL_WAVESHARE_TOUCHSCREEN_V2 is not set
+-# CONFIG_DRM_POWERVR is not set
+-# CONFIG_DRM_RP1_DPI is not set
+-# CONFIG_DRM_RP1_DSI is not set
+-# CONFIG_DRM_RP1_VEC is not set
+-# CONFIG_FB_RPISENSE is not set
+-# CONFIG_FIRMWARE_RP1 is not set
+-# CONFIG_GPIO_PWM is not set
+-# CONFIG_INPUT_RASPBERRYPI_BUTTON is not set
+-# CONFIG_MBOX_RP1 is not set
+-# CONFIG_MEDIA_PCI_HAILO is not set
+-# CONFIG_MFD_PM8921_CORE is not set
+-# CONFIG_MFD_RASPBERRYPI_POE_HAT is not set
+-# CONFIG_MFD_RP1 is not set
+-# CONFIG_MFD_RPISENSE_CORE is not set
+-# CONFIG_PHY_CADENCE_DP is not set
+-# CONFIG_PINCTRL_BCM2712 is not set
+-# CONFIG_PINCTRL_RP1 is not set
+-# CONFIG_PWM_PIO_RP1 is not set
+-# CONFIG_PWM_RP1 is not set
++CONFIG_64BIT=y
++CONFIG_ARCH_BINFMT_ELF_EXTRA_PHDRS=y
++CONFIG_ARCH_CORRECT_STACKTRACE_ON_KRETPROBE=y
++CONFIG_ARCH_DEFAULT_KEXEC_IMAGE_VERIFY_SIG=y
++CONFIG_ARCH_DMA_ADDR_T_64BIT=y
++CONFIG_ARCH_FORCE_MAX_ORDER=10
++CONFIG_ARCH_KEEP_MEMBLOCK=y
++CONFIG_ARCH_MHP_MEMMAP_ON_MEMORY_ENABLE=y
++CONFIG_ARCH_MMAP_RND_BITS=18
++CONFIG_ARCH_MMAP_RND_BITS_MAX=24
++CONFIG_ARCH_MMAP_RND_BITS_MIN=18
++CONFIG_ARCH_MMAP_RND_COMPAT_BITS_MIN=11
++CONFIG_ARCH_PKEY_BITS=3
++CONFIG_ARCH_PROC_KCORE_TEXT=y
++CONFIG_ARCH_SPARSEMEM_ENABLE=y
++CONFIG_ARCH_STACKWALK=y
++CONFIG_ARCH_SUSPEND_POSSIBLE=y
++CONFIG_ARCH_WANTS_EXECMEM_LATE=y
++CONFIG_ARCH_WANTS_NO_INSTR=y
++CONFIG_ARCH_WANTS_THP_SWAP=y
++CONFIG_ARM64=y
++CONFIG_ARM64_4K_PAGES=y
++CONFIG_ARM64_LD_HAS_FIX_ERRATUM_843419=y
++CONFIG_ARM64_PA_BITS=48
++CONFIG_ARM64_PA_BITS_48=y
++CONFIG_ARM64_PLATFORM_DEVICES=y
++CONFIG_ARM64_TAGGED_ADDR_ABI=y
++CONFIG_ARM64_VA_BITS=39
++CONFIG_ARM64_VA_BITS_39=y
++CONFIG_ARM_AMBA=y
++CONFIG_ARM_ARCH_TIMER=y
++CONFIG_ARM_ARCH_TIMER_EVTSTREAM=y
++CONFIG_ARM_GIC=y
++CONFIG_ARM_GIC_V3=y
++CONFIG_ARM_GIC_V3_ITS=y
++CONFIG_ARM_PSCI_FW=y
++CONFIG_AUDIT_ARCH_COMPAT_GENERIC=y
++# CONFIG_BRCM_CHAR_DRIVERS is not set
++CONFIG_BT=y
++CONFIG_BT_BCM=y
++CONFIG_BT_BNEP=y
++CONFIG_BT_BREDR=y
++CONFIG_BT_DEBUGFS=y
++CONFIG_BT_HCIUART=y
++CONFIG_BT_HCIUART_BCM=y
++# CONFIG_BT_HCIUART_BCSP is not set
++# CONFIG_BT_HCIUART_INTEL is not set
++CONFIG_BT_HCIUART_SERDEV=y
++CONFIG_BT_HCIVHCI=y
++CONFIG_BT_LE=y
++CONFIG_BT_RFCOMM=y
++CONFIG_BUILTIN_RETURN_ADDRESS_STRIPS_PAC=y
++CONFIG_CC_HAVE_SHADOW_CALL_STACK=y
++CONFIG_CC_HAVE_STACKPROTECTOR_SYSREG=y
++CONFIG_CLONE_BACKWARDS=y
++CONFIG_COMMON_CLK=y
++CONFIG_COMPACT_UNEVICTABLE_DEFAULT=1
++# CONFIG_COMPAT_32BIT_TIME is not set
++CONFIG_CONTEXT_TRACKING=y
++CONFIG_CONTEXT_TRACKING_IDLE=y
++CONFIG_CPUMASK_OFFSTACK=y
++CONFIG_CPU_BIG_ENDIAN=y
++CONFIG_CPU_MITIGATIONS=y
++CONFIG_CPU_RMAP=y
++CONFIG_CRC16=y
++CONFIG_CRYPTO_CMAC=y
++CONFIG_CRYPTO_DRBG=y
++CONFIG_CRYPTO_DRBG_HMAC=y
++CONFIG_CRYPTO_DRBG_MENU=y
++CONFIG_CRYPTO_ECB=y
++CONFIG_CRYPTO_ECC=y
++CONFIG_CRYPTO_ECDH=y
++CONFIG_CRYPTO_HMAC=y
++CONFIG_CRYPTO_JITTERENTROPY=y
++CONFIG_CRYPTO_JITTERENTROPY_MEMORY_BLOCKS=64
++CONFIG_CRYPTO_JITTERENTROPY_MEMORY_BLOCKSIZE=32
++CONFIG_CRYPTO_JITTERENTROPY_OSR=1
++CONFIG_CRYPTO_LIB_BLAKE2S_GENERIC=y
++CONFIG_CRYPTO_LIB_GF128MUL=y
++CONFIG_CRYPTO_LIB_SHA1=y
++CONFIG_CRYPTO_LIB_SHA256=y
++CONFIG_CRYPTO_LIB_UTILS=y
++CONFIG_CRYPTO_RNG=y
++CONFIG_CRYPTO_RNG2=y
++CONFIG_CRYPTO_RNG_DEFAULT=y
++CONFIG_CRYPTO_SHA256=y
++CONFIG_CRYPTO_SHA3=y
++CONFIG_CRYPTO_SHA512=y
++CONFIG_DCACHE_WORD_ACCESS=y
++CONFIG_DEBUG_INFO=y
++CONFIG_DEV_COREDUMP=y
++CONFIG_DMA_DIRECT_REMAP=y
++CONFIG_DMA_NEED_SYNC=y
++CONFIG_DTC=y
++CONFIG_EDAC_SUPPORT=y
++CONFIG_EXCLUSIVE_SYSTEM_RAM=y
++CONFIG_FIX_EARLYCON_MEM=y
++CONFIG_FRAME_POINTER=y
++CONFIG_FS_IOMAP=y
++CONFIG_FUNCTION_ALIGNMENT=4
++CONFIG_FUNCTION_ALIGNMENT_4B=y
++CONFIG_FW_LOADER_PAGED_BUF=y
++CONFIG_FW_LOADER_SYSFS=y
++CONFIG_GCC_SUPPORTS_DYNAMIC_FTRACE_WITH_ARGS=y
++CONFIG_GENERIC_ALLOCATOR=y
++CONFIG_GENERIC_ARCH_TOPOLOGY=y
++CONFIG_GENERIC_BUG=y
++CONFIG_GENERIC_BUG_RELATIVE_POINTERS=y
++CONFIG_GENERIC_CLOCKEVENTS=y
++CONFIG_GENERIC_CLOCKEVENTS_BROADCAST=y
++CONFIG_GENERIC_CPU_AUTOPROBE=y
++CONFIG_GENERIC_CPU_DEVICES=y
++CONFIG_GENERIC_CPU_VULNERABILITIES=y
++CONFIG_GENERIC_CSUM=y
++CONFIG_GENERIC_EARLY_IOREMAP=y
++CONFIG_GENERIC_GETTIMEOFDAY=y
++CONFIG_GENERIC_IDLE_POLL_SETUP=y
++CONFIG_GENERIC_IOREMAP=y
++CONFIG_GENERIC_IRQ_EFFECTIVE_AFF_MASK=y
++CONFIG_GENERIC_IRQ_KEXEC_CLEAR_VM_FORWARD=y
++CONFIG_GENERIC_IRQ_SHOW=y
++CONFIG_GENERIC_IRQ_SHOW_LEVEL=y
++CONFIG_GENERIC_LIB_DEVMEM_IS_ALLOWED=y
++CONFIG_GENERIC_MSI_IRQ=y
++CONFIG_GENERIC_PCI_IOMAP=y
++CONFIG_GENERIC_SCHED_CLOCK=y
++CONFIG_GENERIC_SMP_IDLE_THREAD=y
++CONFIG_GENERIC_STRNCPY_FROM_USER=y
++CONFIG_GENERIC_STRNLEN_USER=y
++CONFIG_GENERIC_TIME_VSYSCALL=y
++CONFIG_GPIO_CDEV=y
++# CONFIG_GPIO_FSM is not set
++CONFIG_HARDIRQS_SW_RESEND=y
++CONFIG_HAS_DMA=y
++CONFIG_HAS_IOMEM=y
++CONFIG_HAS_IOPORT=y
++CONFIG_HZ_PERIODIC=y
++CONFIG_ILLEGAL_POINTER_VALUE=0xdead000000000000
++CONFIG_INITRAMFS_SOURCE=""
++CONFIG_IRQCHIP=y
++CONFIG_IRQ_DOMAIN=y
++CONFIG_IRQ_DOMAIN_HIERARCHY=y
++CONFIG_IRQ_FORCED_THREADING=y
++CONFIG_IRQ_MSI_LIB=y
++CONFIG_IRQ_WORK=y
++CONFIG_ISDN_CAPI=y
++# CONFIG_LEDS_TRIGGER_ACTPWR is not set
++# CONFIG_LEDS_TRIGGER_INPUT is not set
++CONFIG_LIBFDT=y
++CONFIG_LOCK_DEBUGGING_SUPPORT=y
++CONFIG_LOCK_SPIN_ON_OWNER=y
++CONFIG_LRU_GEN_WALKS_MMU=y
++CONFIG_MIGRATION=y
++CONFIG_MMU_LAZY_TLB_REFCOUNT=y
++CONFIG_MODULES_USE_ELF_RELA=y
++CONFIG_MUTEX_SPIN_ON_OWNER=y
++CONFIG_NEED_DMA_MAP_STATE=y
++CONFIG_NEED_SG_DMA_LENGTH=y
++CONFIG_NET_EGRESS=y
++CONFIG_NET_FLOW_LIMIT=y
++CONFIG_NET_INGRESS=y
++CONFIG_NET_XGRESS=y
++CONFIG_NO_IOPORT_MAP=y
++CONFIG_NR_CPUS=512
++CONFIG_OF=y
++CONFIG_OF_ADDRESS=y
++# CONFIG_OF_CONFIGFS is not set
++CONFIG_OF_EARLY_FLATTREE=y
++CONFIG_OF_FLATTREE=y
++CONFIG_OF_GPIO=y
++CONFIG_OF_IRQ=y
++CONFIG_OF_KOBJ=y
++CONFIG_PADATA=y
++CONFIG_PAGE_POOL=y
++CONFIG_PAGE_SIZE_LESS_THAN_256KB=y
++CONFIG_PAGE_SIZE_LESS_THAN_64KB=y
++CONFIG_PARTITION_PERCPU=y
++CONFIG_PER_VMA_LOCK=y
++CONFIG_PGTABLE_LEVELS=3
++CONFIG_PHYS_ADDR_T_64BIT=y
++CONFIG_POSIX_CPU_TIMERS_TASK_WORK=y
++CONFIG_POWER_RESET=y
++CONFIG_POWER_SUPPLY=y
++CONFIG_PTP_1588_CLOCK_OPTIONAL=y
++CONFIG_QUEUED_RWLOCKS=y
++CONFIG_QUEUED_SPINLOCKS=y
++CONFIG_RANDSTRUCT_NONE=y
+ # CONFIG_RASPBERRYPI_GPIOMEM is not set
+-# CONFIG_REGULATOR_RASPBERRYPI_TOUCHSCREEN_V2 is not set
+-# CONFIG_REGULATOR_WAVESHARE_TOUCHSCREEN is not set
+-# CONFIG_RP1_PIO is not set
+-# CONFIG_SENSORS_RP1_ADC is not set
+-# CONFIG_SERIAL_RPI_FW is not set
+-# CONFIG_SND_PIMIDI is not set
+-# CONFIG_SND_PISOUND_MICRO is not set
+-# CONFIG_SND_RP1_AUDIO_OUT is not set
+-# CONFIG_SPI_RP2040_GPIO_BRIDGE is not set
+-# CONFIG_VIDEO_AD5398 is not set
+-# CONFIG_VIDEO_ARDUCAM_64MP is not set
+-# CONFIG_VIDEO_ARDUCAM_PIVARIETY is not set
+-# CONFIG_VIDEO_BCM2835_UNICAM is not set
+-# CONFIG_VIDEO_BCM2835_UNICAM_LEGACY is not set
+-# CONFIG_VIDEO_BU64754 is not set
+-# CONFIG_VIDEO_CADENCE is not set
+-# CONFIG_VIDEO_CODEC_BCM2835 is not set
+-# CONFIG_VIDEO_IMX477 is not set
+-# CONFIG_VIDEO_IMX519 is not set
+-# CONFIG_VIDEO_IMX708 is not set
+-# CONFIG_VIDEO_IRS1125 is not set
+-# CONFIG_VIDEO_ISP_BCM2835 is not set
+-# CONFIG_VIDEO_OV64A40 is not set
+-# CONFIG_VIDEO_RASPBERRYPI_PISP_BE is not set
+-# CONFIG_VIDEO_RP1_CFE is not set
+-# CONFIG_VIDEO_RPI_HEVC_DEC is not set
+-# CONFIG_WS2812_PIO_RP1 is not set
++CONFIG_RATIONAL=y
++# CONFIG_RAVE_SP_CORE is not set
++CONFIG_RFS_ACCEL=y
++CONFIG_RODATA_FULL_DEFAULT_ENABLED=y
++CONFIG_RPS=y
++CONFIG_RUSTC_HAS_UNNECESSARY_TRANSMUTES=y
++CONFIG_RWSEM_SPIN_ON_OWNER=y
++CONFIG_SERIAL_8250_FSL=y
++CONFIG_SERIAL_DEV_BUS=y
++CONFIG_SERIAL_DEV_CTRL_TTYPORT=y
++CONFIG_SERIAL_MCTRL_GPIO=y
++CONFIG_SMP=y
++CONFIG_SOCK_RX_QUEUE_MAPPING=y
++CONFIG_SOFTIRQ_ON_OWN_STACK=y
++CONFIG_SPARSEMEM=y
++CONFIG_SPARSEMEM_EXTREME=y
++CONFIG_SPARSEMEM_VMEMMAP=y
++CONFIG_SPARSEMEM_VMEMMAP_ENABLE=y
++CONFIG_SPARSE_IRQ=y
++CONFIG_SPLIT_PMD_PTLOCKS=y
++CONFIG_SPLIT_PTE_PTLOCKS=y
++CONFIG_SWIOTLB=y
++CONFIG_SYSCTL_EXCEPTION_TRACE=y
++CONFIG_THREAD_INFO_IN_TASK=y
++CONFIG_TICK_CPU_ACCOUNTING=y
++CONFIG_TIMER_OF=y
++CONFIG_TIMER_PROBE=y
++CONFIG_TOOLS_SUPPORT_RELR=y
++CONFIG_TRACE_IRQFLAGS_NMI_SUPPORT=y
++CONFIG_TREE_RCU=y
++CONFIG_TREE_SRCU=y
++CONFIG_UNMAP_KERNEL_AT_EL0=y
++CONFIG_USER_STACKTRACE_SUPPORT=y
++CONFIG_VDSO_GETRANDOM=y
++CONFIG_WANT_DEV_COREDUMP=y
++CONFIG_XPS=y
++CONFIG_ZONE_DMA32=y
+diff --git a/target/linux/bcm27xx/image/cmdline.txt b/target/linux/bcm27xx/image/cmdline.txt
+index bdd1e59a09..fd3e668f19 100644
+--- a/target/linux/bcm27xx/image/cmdline.txt
++++ b/target/linux/bcm27xx/image/cmdline.txt
+@@ -1 +1 @@
+-console=tty1 console=serial0,115200 root=@ROOT@ rootfstype=squashfs,ext4 rootwait
++console=tty1 root=@ROOT@ rootfstype=squashfs,ext4 rootwait
+diff --git a/target/linux/bcm27xx/image/config.txt b/target/linux/bcm27xx/image/config.txt
+index db35d72ab7..4ea3c66179 100644
+--- a/target/linux/bcm27xx/image/config.txt
++++ b/target/linux/bcm27xx/image/config.txt
+@@ -12,3 +12,4 @@ include distroconfig.txt
  
- exit 0
+ [all]
+ # Place your custom settings here.
++dtparam=krnbt=on
+diff --git a/target/linux/bcm27xx/image/distroconfig.txt b/target/linux/bcm27xx/image/distroconfig.txt
+index b09e5b8466..2745a1e211 100644
+--- a/target/linux/bcm27xx/image/distroconfig.txt
++++ b/target/linux/bcm27xx/image/distroconfig.txt
+@@ -7,10 +7,10 @@
+ #  which changes the core frequency to a fixed value and impacts performance.
+ # See https://www.raspberrypi.com/documentation/computers/configuration.html#mini-uart-and-cpu-core-frequency
+ [pi0w]
+-dtoverlay=disable-bt
++#dtoverlay=disable-bt
+ [pi3]
+-dtoverlay=disable-bt
++#dtoverlay=disable-bt
+ [pi4]
+-dtoverlay=disable-bt
++#dtoverlay=disable-bt
+ # Run as fast as firmware / board allows
+ arm_boost=1
