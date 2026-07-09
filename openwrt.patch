@@ -1,0 +1,95 @@
+diff --git a/target/linux/bcm27xx/base-files/etc/rc.local b/target/linux/bcm27xx/base-files/etc/rc.local
+index 4bcc226940..8eea22b5dc 100755
+--- a/target/linux/bcm27xx/base-files/etc/rc.local
++++ b/target/linux/bcm27xx/base-files/etc/rc.local
+@@ -1,10 +1,3 @@
+ echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+ 
+-modprobe btbcm
+-modprobe hci_uart
+-sleep 2
+-btattach -B /dev/ttyAMA1 -S 3000000 -P bcm
+-sleep 3
+-hciconfig hci0 up
+-
+ exit 0
+diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/01-setup-expand b/target/linux/bcm27xx/base-files/etc/uci-defaults/01-setup-expand
+deleted file mode 100755
+index a29934be92..0000000000
+--- a/target/linux/bcm27xx/base-files/etc/uci-defaults/01-setup-expand
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#/bin/sh
+-chmod +x /etc/resize-fs.sh
+-
+-. /etc/resize-fs.sh
+-sh /etc/uci-defaults/70-rootpt-resize
+-
+-exit 0
+diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default b/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
+index 1350dc6c74..abc121c78f 100755
+--- a/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
++++ b/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
+@@ -19,6 +19,11 @@ uci set firewall.@rule[-1].src='wan'
+ uci set firewall.@rule[-1].name='Allow-SSH-WAN'
+ uci set firewall.@rule[-1].dest_port='22'
+ uci set firewall.@rule[-1].target='ACCEPT'
++uci del firewall.cfg03dc81.network
++uci add_list firewall.cfg03dc81.network='wan'
++uci add_list firewall.cfg03dc81.network='wan6'
++uci add_list firewall.cfg03dc81.network='wwan'
++
+ 
+ # /etc/config/network
+ uci add network device # =cfg070f15
+@@ -38,7 +43,33 @@ uci set network.wan.peerdns='0'
+ uci add_list network.wan.dns='1.1.1.1'
+ uci set network.wan.multipath='off'
+ 
++uci set network.wwan=interface
++uci set network.wwan.proto='none'
++uci set network.wwan.proto='dhcp'
++uci set network.wwan.device='phy0-sta0'
++
++
++# docker setup
++uci set dockerd.firewall.extra_iptables_args='--match conntrack ! --ctstate RELATED,ESTABLISHED'
++
++for i in $(seq 1 15); do
++    [ -n "$(uci -q get wireless.radio1)" ] && break
++    sleep 1
++done
++
+ # /etc/config/wireless
++uci set wireless.radio0.htmode='HT20'
++uci set wireless.radio0.band='2g'
++uci set wireless.radio0.channel='auto'
++uci set wireless.radio0.cell_density='0'
++uci set wireless.default_radio0.mode='sta'
++uci set wireless.default_radio0.ssid='Client'
++uci set wireless.default_radio0.encryption='psk2'
++uci set wireless.default_radio0.key='password'
++uci set wireless.default_radio0.network='wwan'
++uci set wireless.radio0.disabled='0'
++uci set wireless.default_radio0.disabled='0'
++
+ uci set wireless.radio1.htmode='HT20'
+ uci set wireless.radio1.band='2g'
+ uci set wireless.radio1.channel='auto'
+@@ -46,12 +77,11 @@ uci set wireless.radio1.cell_density='0'
+ uci set wireless.default_radio1.ssid='FKM-Comp'
+ uci set wireless.default_radio1.encryption='psk2'
+ uci set wireless.default_radio1.key='Competition'
+-
+-# docker setup
+-uci set dockerd.firewall.extra_iptables_args='--match conntrack ! --ctstate RELATED,ESTABLISHED'
+-uci commit dockerd
++uci set wireless.radio1.disabled='0'
++uci set wireless.default_radio1.disabled='0'
+ 
+ uci commit
+-wifi reload
++wifi up radio0
++wifi up radio1
+ 
+ exit 0
