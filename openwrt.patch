@@ -26,6 +26,52 @@ index 0000000000..fe6ec02c60
 +    sleep 3
 +    hciconfig hci0 up
 +}
+diff --git a/target/linux/bcm27xx/base-files/etc/init.d/custom-setup b/target/linux/bcm27xx/base-files/etc/init.d/custom-setup
+new file mode 100755
+index 0000000000..a4cab4476e
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/init.d/custom-setup
+@@ -0,0 +1,40 @@
++#!/bin/sh /etc/rc.common
++
++START=99
++STOP=01
++
++FLAG=/etc/.custom_setup_done
++
++start() {
++    [ -f "$FLAG" ] && exit 0
++
++    # wait for phy1 to enumerate (USB/slow-probe radios)
++    for i in $(seq 1 60); do
++        [ -d /sys/class/ieee80211/phy1 ] && break
++        sleep 1
++    done
++    [ -d /sys/class/ieee80211/phy1 ] || {
++        logger -t custom-setup "phy1 never appeared, aborting"
++        exit 1
++    }
++
++    # generate the radio1 UCI section if it doesn't exist yet
++    if ! uci -q get wireless.radio1 >/dev/null; then
++        wifi detect >> /etc/config/wireless
++    fi
++
++    uci set wireless.radio1.htmode='HT20'
++    uci set wireless.radio1.band='2g'
++    uci set wireless.radio1.channel='auto'
++    uci set wireless.radio1.cell_density='0'
++    uci set wireless.radio1.disabled='0'
++    uci set wireless.default_radio1.ssid='FKM-Comp'
++    uci set wireless.default_radio1.encryption='psk2'
++    uci set wireless.default_radio1.key='Competition'
++    uci set wireless.default_radio1.disabled='0'
++    uci commit wireless
++    wifi up radio1
++
++    touch "$FLAG"
++    logger -t custom-setup "initial configuration applied"
++}
 diff --git a/target/linux/bcm27xx/base-files/etc/init.d/fim b/target/linux/bcm27xx/base-files/etc/init.d/fim
 new file mode 100755
 index 0000000000..b519b57caa
@@ -55,6 +101,14 @@ index 0000000000..96994d8e4a
 +++ b/target/linux/bcm27xx/base-files/etc/rc.d/S95bluetooth-hci
 @@ -0,0 +1 @@
 +./etc/init.d/bluetooth-hci
+\ No newline at end of file
+diff --git a/target/linux/bcm27xx/base-files/etc/rc.d/S99custom-setup b/target/linux/bcm27xx/base-files/etc/rc.d/S99custom-setup
+new file mode 120000
+index 0000000000..ea3b96b434
+--- /dev/null
++++ b/target/linux/bcm27xx/base-files/etc/rc.d/S99custom-setup
+@@ -0,0 +1 @@
++./etc/init.d/custom-setup
 \ No newline at end of file
 diff --git a/target/linux/bcm27xx/base-files/etc/rc.d/S99fim b/target/linux/bcm27xx/base-files/etc/rc.d/S99fim
 new file mode 120000
@@ -131,10 +185,15 @@ index 0000000000..27be6f69a3
 +exit 1
 diff --git a/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default b/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
 new file mode 100755
-index 0000000000..abc121c78f
+index 0000000000..8c18abfd6d
 --- /dev/null
 +++ b/target/linux/bcm27xx/base-files/etc/uci-defaults/99-eth-wifi-default
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,109 @@
++# /etc/config/uhttpd
++uci delete uhttpd.main.listen_http
++uci add_list uhttpd.main.listen_http='0.0.0.0:81'
++uci add_list uhttpd.main.listen_http='[::]:81'
++
 +# /etc/config/dhcp
 +uci del dhcp.lan.ra_slaac
 +uci set dhcp.lan.ra_preference='medium'
@@ -143,6 +202,7 @@ index 0000000000..abc121c78f
 +uci add firewall forwarding # =cfg0fad58
 +uci set firewall.@forwarding[-1].src='docker'
 +uci set firewall.@forwarding[-1].dest='wan'
++
 +uci add firewall redirect # =cfg103837
 +uci set firewall.@redirect[-1].dest='lan'
 +uci set firewall.@redirect[-1].target='DNAT'
@@ -151,15 +211,35 @@ index 0000000000..abc121c78f
 +uci set firewall.@redirect[-1].src_dport='80'
 +uci set firewall.@redirect[-1].dest_ip='192.168.3.1'
 +uci set firewall.@redirect[-1].dest_port='80'
++
++uci add firewall redirect # =cfg133837
++uci set firewall.@redirect[-1].dest='lan'
++uci set firewall.@redirect[-1].target='DNAT'
++uci set firewall.@redirect[-1].name='web2'
++uci set firewall.@redirect[-1].src='wan'
++uci set firewall.@redirect[-1].src_dport='81'
++uci set firewall.@redirect[-1].dest_ip='192.168.3.1'
++uci set firewall.@redirect[-1].dest_port='81'
++
 +uci add firewall rule # =cfg1192bd
 +uci set firewall.@rule[-1].src='wan'
 +uci set firewall.@rule[-1].name='Allow-SSH-WAN'
 +uci set firewall.@rule[-1].dest_port='22'
 +uci set firewall.@rule[-1].target='ACCEPT'
++
 +uci del firewall.cfg03dc81.network
 +uci add_list firewall.cfg03dc81.network='wan'
 +uci add_list firewall.cfg03dc81.network='wan6'
 +uci add_list firewall.cfg03dc81.network='wwan'
++
++uci add firewall redirect # =cfg123837
++uci set firewall.@redirect[-1].dest='lan'
++uci set firewall.@redirect[-1].target='DNAT'
++uci set firewall.@redirect[-1].name='fim'
++uci set firewall.@redirect[-1].src='wan'
++uci set firewall.@redirect[-1].src_dport='8181'
++uci set firewall.@redirect[-1].dest_ip='192.168.3.1'
++uci set firewall.@redirect[-1].dest_port='8181'
 +
 +
 +# /etc/config/network
@@ -189,10 +269,16 @@ index 0000000000..abc121c78f
 +# docker setup
 +uci set dockerd.firewall.extra_iptables_args='--match conntrack ! --ctstate RELATED,ESTABLISHED'
 +
-+for i in $(seq 1 15); do
-+    [ -n "$(uci -q get wireless.radio1)" ] && break
-+    sleep 1
-+done
++if ! uci -q get firewall.docker >/dev/null; then
++    uci add firewall zone
++    uci rename firewall.@zone[-1]='docker'
++    uci set firewall.docker.name='docker'
++    uci set firewall.docker.input='ACCEPT'
++    uci set firewall.docker.output='ACCEPT'
++    uci set firewall.docker.forward='ACCEPT'
++fi
++
++uci add_list firewall.docker.device='br-*'
 +
 +# /etc/config/wireless
 +uci set wireless.radio0.htmode='HT20'
@@ -207,28 +293,18 @@ index 0000000000..abc121c78f
 +uci set wireless.radio0.disabled='0'
 +uci set wireless.default_radio0.disabled='0'
 +
-+uci set wireless.radio1.htmode='HT20'
-+uci set wireless.radio1.band='2g'
-+uci set wireless.radio1.channel='auto'
-+uci set wireless.radio1.cell_density='0'
-+uci set wireless.default_radio1.ssid='FKM-Comp'
-+uci set wireless.default_radio1.encryption='psk2'
-+uci set wireless.default_radio1.key='Competition'
-+uci set wireless.radio1.disabled='0'
-+uci set wireless.default_radio1.disabled='0'
-+
 +uci commit
 +wifi up radio0
-+wifi up radio1
++/etc/init.d/uhttpd restart
 +
 +exit 0
 diff --git a/target/linux/bcm27xx/base-files/opt/fim b/target/linux/bcm27xx/base-files/opt/fim
 new file mode 160000
-index 0000000000..dab9c92b1c
+index 0000000000..d1c59fc48a
 --- /dev/null
 +++ b/target/linux/bcm27xx/base-files/opt/fim
 @@ -0,0 +1 @@
-+Subproject commit dab9c92b1cf87ce0c3104a7217ed27b056b1437b
++Subproject commit d1c59fc48a82d1bb97ee7990cb0a8e8187cf1b69
 diff --git a/target/linux/bcm27xx/config-6.12 b/target/linux/bcm27xx/config-6.12
 index 157d532cae..3006ae4b7f 100644
 --- a/target/linux/bcm27xx/config-6.12
